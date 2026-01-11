@@ -110,11 +110,32 @@ Add the following JSON object to the `mcpServers` section of your MCP client's c
 }
 ```
 
+**Using Glob Patterns:**
+
+```json
+{
+  "mcpServers": {
+    "VTEX APIs (npx)": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "git+https://github.com/domaspe/mcp-openapi-schema-explorer.git",
+        "/path/to/openapi-schemas/VTEX - *.json",
+        "--output-format",
+        "yaml"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
 **Configuration Notes:**
 
 - Replace `"My API Spec (npx)"` with a unique name for this server instance in your client.
 - Replace `<path-or-url-to-spec>` with the absolute local file path or full remote URL of your specification.
 - You can specify multiple spec paths before `--output-format` to load multiple APIs in one server instance.
+- **Glob patterns** are supported: use wildcards like `*`, `?`, `[abc]`, `{a,b}` to match multiple files (e.g., `/path/to/*.json`).
 - The `--output-format` is optional (`json`, `yaml`, `json-minified`), defaulting to `json`.
 
 ### Method 2: Docker
@@ -236,6 +257,7 @@ Add the following entry to your MCP client's configuration file. This instructs 
 ## Features
 
 - **Multi-Spec Support:** Load multiple OpenAPI specifications in a single server instance, each accessible via a unique slug derived from `info.title`.
+- **Glob Pattern Support:** Use wildcards to load multiple specs at once (e.g., `/path/to/specs/*.json` or `/path/to/VTEX - *.yaml`). Files are sorted alphabetically for consistent loading order.
 - **MCP Resource Access:** Explore OpenAPI specs via intuitive URIs (`openapi://specs`, `openapi://{specId}/paths/...`, `openapi://{specId}/components/...`).
 - **OpenAPI v3.0 & Swagger v2.0 Support:** Loads both formats, automatically converting v2.0 to v3.0.
 - **Local & Remote Files:** Load specs from local file paths or HTTP/HTTPS URLs.

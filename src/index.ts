@@ -2,6 +2,7 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig } from './config.js';
+import { expandGlobPatterns } from './utils/glob-expand.js';
 
 import { TopLevelFieldHandler } from './handlers/top-level-field-handler.js';
 import { PathItemHandler } from './handlers/path-item-handler.js';
@@ -31,7 +32,9 @@ async function main(): Promise<void> {
       options.outputFormat = args[outputFormatIndex + 1];
     }
 
-    const config = loadConfig(specPaths, options);
+    // Expand glob patterns to actual file paths
+    const expandedPaths = await expandGlobPatterns(specPaths);
+    const config = loadConfig(expandedPaths, options);
 
     // Initialize services
     const referenceTransform = new ReferenceTransformService();
