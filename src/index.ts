@@ -49,7 +49,19 @@ async function main(): Promise<void> {
         ? `Schema Explorer for ${loadedSpecs[0].title}`
         : `Schema Explorer for ${loadedSpecs.length} APIs`;
 
-    const helpContent = `Use openapi://specs to list available APIs. Then use openapi://{specId}/paths to explore endpoints.`;
+    const helpContent = `OpenAPI Schema Explorer - Access multiple API specifications.
+
+Start by reading openapi://specs to see all available APIs and their specIds.
+
+For each API, use these URI patterns:
+- openapi://{specId}/info - API metadata
+- openapi://{specId}/paths - List all endpoints
+- openapi://{specId}/paths/{encoded_path}/{method} - Operation details
+- openapi://{specId}/components/schemas - List schemas
+- openapi://{specId}/components/schemas/{name} - Schema details
+
+The {specId} is derived from each API's title (e.g., "Catalog API" becomes "catalog-api").
+Path segments must be URL-encoded (e.g., /users/{id} becomes users%2F%7Bid%7D).`;
 
     const server = new McpServer(
       { name: serverName, version: VERSION },
