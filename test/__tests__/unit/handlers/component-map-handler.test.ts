@@ -1,6 +1,7 @@
 import { OpenAPIV3 } from 'openapi-types';
 import { RequestId } from '@modelcontextprotocol/sdk/types.js';
 import { ComponentMapHandler } from '../../../../src/handlers/component-map-handler';
+import { SpecManagerService } from '../../../../src/services/spec-manager';
 import { SpecLoaderService } from '../../../../src/types';
 import { IFormatter, JsonFormatter } from '../../../../src/services/formatters';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,7 +16,14 @@ const mockSpecLoader: SpecLoaderService = {
   getTransformedSpec: mockGetTransformedSpec,
 };
 
-const mockFormatter: IFormatter = new JsonFormatter(); // Needed for context
+const mockSpecManager = {
+  getLoader: jest.fn().mockReturnValue(mockSpecLoader),
+  getAllSpecs: jest.fn(),
+  getSpecSlugs: jest.fn(),
+  getSpec: jest.fn(),
+} as unknown as SpecManagerService;
+
+const mockFormatter: IFormatter = new JsonFormatter();
 
 // Sample Data
 const sampleSpec: OpenAPIV3.Document = {
@@ -30,17 +38,20 @@ const sampleSpec: OpenAPIV3.Document = {
     parameters: {
       limitParam: { name: 'limit', in: 'query', schema: { type: 'integer' } },
     },
-    examples: {}, // Empty type
+    examples: {},
   },
 };
+
+const SPEC_ID = 'test-api';
 
 describe('ComponentMapHandler', () => {
   let handler: ComponentMapHandler;
 
   beforeEach(() => {
-    handler = new ComponentMapHandler(mockSpecLoader, mockFormatter);
+    handler = new ComponentMapHandler(mockSpecManager, mockFormatter);
     mockGetTransformedSpec.mockReset();
-    mockGetTransformedSpec.mockResolvedValue(sampleSpec); // Default mock
+    mockGetTransformedSpec.mockResolvedValue(sampleSpec);
+    (mockSpecManager.getLoader as jest.Mock).mockReturnValue(mockSpecLoader);
   });
 
   it('should return the correct template', () => {
@@ -58,64 +69,68 @@ describe('ComponentMapHandler', () => {
     };
 
     it('should list names for a valid component type (schemas)', async () => {
-      const variables: Variables = { type: 'schemas' };
-      const uri = new URL('openapi://components/schemas');
+      const variables: Variables = { specId: SPEC_ID, type: 'schemas' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/schemas`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
+      expect(mockSpecManager.getLoader).toHaveBeenCalledWith(SPEC_ID);
       expect(mockGetTransformedSpec).toHaveBeenCalledWith({
         resourceType: 'schema',
         format: 'openapi',
+        specId: SPEC_ID,
       });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0] as FormattedResultItem;
       expect(content).toMatchObject({
-        uri: 'openapi://components/schemas',
+        uri: `openapi://${SPEC_ID}/components/schemas`,
         mimeType: 'text/plain',
         isError: false,
       });
       expect(content.text).toContain('Available schemas:');
-      expect(content.text).toMatch(/-\sError\n/); // Sorted
+      expect(content.text).toMatch(/-\sError\n/);
       expect(content.text).toMatch(/-\sUser\n/);
-      expect(content.text).toContain("Hint: Use 'openapi://components/schemas/{name}'");
+      expect(content.text).toContain(`Hint: Use 'openapi://${SPEC_ID}/components/schemas/{name}'`);
     });
 
     it('should list names for another valid type (parameters)', async () => {
-      const variables: Variables = { type: 'parameters' };
-      const uri = new URL('openapi://components/parameters');
+      const variables: Variables = { specId: SPEC_ID, type: 'parameters' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/parameters`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0] as FormattedResultItem;
       expect(content).toMatchObject({
-        uri: 'openapi://components/parameters',
+        uri: `openapi://${SPEC_ID}/components/parameters`,
         mimeType: 'text/plain',
         isError: false,
       });
       expect(content.text).toContain('Available parameters:');
       expect(content.text).toMatch(/-\slimitParam\n/);
-      expect(content.text).toContain("Hint: Use 'openapi://components/parameters/{name}'");
+      expect(content.text).toContain(
+        `Hint: Use 'openapi://${SPEC_ID}/components/parameters/{name}'`
+      );
     });
 
     it('should handle component type with no components defined (examples)', async () => {
-      const variables: Variables = { type: 'examples' };
-      const uri = new URL('openapi://components/examples');
+      const variables: Variables = { specId: SPEC_ID, type: 'examples' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/examples`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: 'openapi://components/examples',
+        uri: `openapi://${SPEC_ID}/components/examples`,
         mimeType: 'text/plain',
         text: 'No components of type "examples" found.',
-        isError: true, // Treat as error because map exists but is empty
+        isError: true,
       });
     });
 
     it('should handle component type not present in spec (securitySchemes)', async () => {
-      const variables: Variables = { type: 'securitySchemes' };
-      const uri = new URL('openapi://components/securitySchemes');
+      const variables: Variables = { specId: SPEC_ID, type: 'securitySchemes' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/securitySchemes`);
       const expectedLogMessage = /Component type "securitySchemes" not found/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -123,9 +138,8 @@ describe('ComponentMapHandler', () => {
       );
 
       expect(result.contents).toHaveLength(1);
-      // Expect the specific error message from getValidatedComponentMap
       expect(result.contents[0]).toEqual({
-        uri: 'openapi://components/securitySchemes',
+        uri: `openapi://${SPEC_ID}/components/securitySchemes`,
         mimeType: 'text/plain',
         text: 'Component type "securitySchemes" not found in the specification. Available types: schemas, parameters, examples',
         isError: true,
@@ -133,8 +147,8 @@ describe('ComponentMapHandler', () => {
     });
 
     it('should return error for invalid component type', async () => {
-      const variables: Variables = { type: 'invalidType' };
-      const uri = new URL('openapi://components/invalidType');
+      const variables: Variables = { specId: SPEC_ID, type: 'invalidType' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/invalidType`);
       const expectedLogMessage = /Invalid component type: invalidType/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -143,19 +157,19 @@ describe('ComponentMapHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: 'openapi://components/invalidType',
+        uri: `openapi://${SPEC_ID}/components/invalidType`,
         mimeType: 'text/plain',
         text: 'Invalid component type: invalidType',
         isError: true,
       });
-      expect(mockGetTransformedSpec).not.toHaveBeenCalled(); // Should fail before loading spec
+      expect(mockGetTransformedSpec).not.toHaveBeenCalled();
     });
 
     it('should handle spec loading errors', async () => {
       const error = new Error('Spec load failed');
       mockGetTransformedSpec.mockRejectedValue(error);
-      const variables: Variables = { type: 'schemas' };
-      const uri = new URL('openapi://components/schemas');
+      const variables: Variables = { specId: SPEC_ID, type: 'schemas' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/schemas`);
       const expectedLogMessage = /Spec load failed/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -164,7 +178,7 @@ describe('ComponentMapHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: 'openapi://components/schemas',
+        uri: `openapi://${SPEC_ID}/components/schemas`,
         mimeType: 'text/plain',
         text: 'Spec load failed',
         isError: true,
@@ -174,8 +188,8 @@ describe('ComponentMapHandler', () => {
     it('should handle non-OpenAPI v3 spec', async () => {
       const invalidSpec = { swagger: '2.0', info: {} };
       mockGetTransformedSpec.mockResolvedValue(invalidSpec as unknown as OpenAPIV3.Document);
-      const variables: Variables = { type: 'schemas' };
-      const uri = new URL('openapi://components/schemas');
+      const variables: Variables = { specId: SPEC_ID, type: 'schemas' };
+      const uri = new URL(`openapi://${SPEC_ID}/components/schemas`);
       const expectedLogMessage = /Only OpenAPI v3 specifications are supported/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -184,7 +198,7 @@ describe('ComponentMapHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: 'openapi://components/schemas',
+        uri: `openapi://${SPEC_ID}/components/schemas`,
         mimeType: 'text/plain',
         text: 'Only OpenAPI v3 specifications are supported',
         isError: true,

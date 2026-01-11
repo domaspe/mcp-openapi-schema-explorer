@@ -32,6 +32,7 @@ describe('ReferenceTransformService', () => {
       format: 'openapi',
       path: '/tasks',
       method: 'get',
+      specId: 'test-api',
     };
 
     const doc: OpenAPIV3.Document = {
@@ -67,9 +68,9 @@ describe('ReferenceTransformService', () => {
     expect('content' in response!).toBeTruthy();
     const responseObj = response! as OpenAPIV3.ResponseObject;
     expect(responseObj.content?.['application/json']?.schema).toBeDefined();
-    // Expect the new format
+    // Expect the new format with specId
     expect(responseObj.content!['application/json'].schema).toEqual({
-      $ref: 'openapi://components/schemas/Task',
+      $ref: 'openapi://test-api/components/schemas/Task',
     });
   });
 });
@@ -85,6 +86,7 @@ describe('OpenAPITransformer', () => {
     const context: TransformContext = {
       resourceType: 'endpoint',
       format: 'openapi',
+      specId: 'test-api',
     };
 
     const doc: OpenAPIV3.Document = {
@@ -101,9 +103,9 @@ describe('OpenAPITransformer', () => {
     };
 
     const result = transformer.transformRefs(doc, context);
-    // Expect the new format
+    // Expect the new format with specId
     expect(result.components?.schemas?.Task).toEqual({
-      $ref: 'openapi://components/schemas/TaskId',
+      $ref: 'openapi://test-api/components/schemas/TaskId',
     });
   });
 
@@ -111,6 +113,7 @@ describe('OpenAPITransformer', () => {
     const context: TransformContext = {
       resourceType: 'endpoint',
       format: 'openapi',
+      specId: 'test-api',
     };
 
     const doc: OpenAPIV3.Document = {
@@ -155,9 +158,9 @@ describe('OpenAPITransformer', () => {
     expect('content' in operation.requestBody!).toBeTruthy();
     const requestBody = operation.requestBody! as OpenAPIV3.RequestBodyObject;
     expect(requestBody.content?.['application/json']?.schema).toBeDefined();
-    // Expect the new format
+    // Expect the new format with specId
     expect(requestBody.content['application/json'].schema).toEqual({
-      $ref: 'openapi://components/schemas/Task',
+      $ref: 'openapi://test-api/components/schemas/Task',
     });
 
     // Also check the response reference in the same test
@@ -166,9 +169,9 @@ describe('OpenAPITransformer', () => {
     expect('content' in response).toBeTruthy();
     const responseObj = response as OpenAPIV3.ResponseObject;
     expect(responseObj.content?.['application/json']?.schema).toBeDefined();
-    // Expect the new format
+    // Expect the new format with specId
     expect(responseObj.content!['application/json'].schema).toEqual({
-      $ref: 'openapi://components/schemas/Task',
+      $ref: 'openapi://test-api/components/schemas/Task',
     });
   });
 
@@ -205,6 +208,7 @@ describe('OpenAPITransformer', () => {
     const context: TransformContext = {
       resourceType: 'endpoint',
       format: 'openapi',
+      specId: 'test-api',
     };
     const doc: OpenAPIV3.Document = {
       openapi: '3.0.0',
@@ -220,7 +224,7 @@ describe('OpenAPITransformer', () => {
     };
     const result = transformer.transformRefs(doc, context);
     expect(result.components?.parameters?.UserIdParam).toEqual({
-      $ref: 'openapi://components/parameters/UserId', // Expect transformation
+      $ref: 'openapi://test-api/components/parameters/UserId', // Expect transformation with specId
     });
   });
 
@@ -228,6 +232,7 @@ describe('OpenAPITransformer', () => {
     const context: TransformContext = {
       resourceType: 'endpoint',
       format: 'openapi',
+      specId: 'test-api',
     };
     const doc: OpenAPIV3.Document = {
       openapi: '3.0.0',
@@ -243,7 +248,7 @@ describe('OpenAPITransformer', () => {
     };
     const result = transformer.transformRefs(doc, context);
     expect(result.components?.responses?.GenericError).toEqual({
-      $ref: 'openapi://components/responses/ErrorModel', // Expect transformation
+      $ref: 'openapi://test-api/components/responses/ErrorModel', // Expect transformation with specId
     });
   });
 
@@ -253,6 +258,7 @@ describe('OpenAPITransformer', () => {
     const context: TransformContext = {
       resourceType: 'endpoint',
       format: 'openapi',
+      specId: 'test-api',
     };
 
     const doc: OpenAPIV3.Document = {
@@ -283,9 +289,9 @@ describe('OpenAPITransformer', () => {
     const schemaObject = schema! as OpenAPIV3.SchemaObject;
     expect(schemaObject.properties?.items).toBeDefined();
     const arraySchema = schemaObject.properties!.items as OpenAPIV3.ArraySchemaObject;
-    // Expect the new format
+    // Expect the new format with specId
     expect(arraySchema.items).toEqual({
-      $ref: 'openapi://components/schemas/Task',
+      $ref: 'openapi://test-api/components/schemas/Task',
     });
   });
 

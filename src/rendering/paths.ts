@@ -24,7 +24,8 @@ export class RenderablePaths implements RenderableSpecObject {
     }
 
     // Generate hint first and prepend "Hint: "
-    const hintText = `Use '${context.baseUri}paths/{encoded_path}' to list methods for a specific path, or '${context.baseUri}paths/{encoded_path}/{method}' to view details for a specific operation.`;
+    const specIdPrefix = context.specId ? `${context.specId}/` : '';
+    const hintText = `Use '${context.baseUri}${specIdPrefix}paths/{encoded_path}' to list methods for a specific path, or '${context.baseUri}${specIdPrefix}paths/{encoded_path}/{method}' to view details for a specific operation.`;
     let outputLines: string[] = [`Hint: ${hintText}`, '']; // Start with hint and a blank line
 
     const pathEntries = Object.entries(this.paths).sort(([pathA], [pathB]) =>

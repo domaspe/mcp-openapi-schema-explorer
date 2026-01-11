@@ -62,8 +62,8 @@ describe('Output Format E2E', () => {
       client = testContext.client;
     });
 
-    it('should return JSON for openapi://info', async () => {
-      const result = await client.readResource({ uri: 'openapi://info' });
+    it('should return JSON for openapi://complex-endpoint-test-api/info', async () => {
+      const result = await client.readResource({ uri: 'openapi://complex-endpoint-test-api/info' });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');
@@ -75,7 +75,9 @@ describe('Output Format E2E', () => {
 
     it('should return JSON for operation detail', async () => {
       const path = encodeURIComponent('api/v1/organizations/{orgId}/projects/{projectId}/tasks');
-      const result = await client.readResource({ uri: `openapi://paths/${path}/get` });
+      const result = await client.readResource({
+        uri: `openapi://complex-endpoint-test-api/paths/${path}/get`,
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');
@@ -86,7 +88,9 @@ describe('Output Format E2E', () => {
     });
 
     it('should return JSON for component detail', async () => {
-      const result = await client.readResource({ uri: 'openapi://components/schemas/Task' });
+      const result = await client.readResource({
+        uri: 'openapi://complex-endpoint-test-api/components/schemas/Task',
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');
@@ -111,8 +115,8 @@ describe('Output Format E2E', () => {
       client = testContext.client;
     });
 
-    it('should return YAML for openapi://info', async () => {
-      const result = await client.readResource({ uri: 'openapi://info' });
+    it('should return YAML for openapi://complex-endpoint-test-api/info', async () => {
+      const result = await client.readResource({ uri: 'openapi://complex-endpoint-test-api/info' });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('text/yaml');
@@ -124,7 +128,9 @@ describe('Output Format E2E', () => {
 
     it('should return YAML for operation detail', async () => {
       const path = encodeURIComponent('api/v1/organizations/{orgId}/projects/{projectId}/tasks');
-      const result = await client.readResource({ uri: `openapi://paths/${path}/get` });
+      const result = await client.readResource({
+        uri: `openapi://complex-endpoint-test-api/paths/${path}/get`,
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('text/yaml');
@@ -135,7 +141,9 @@ describe('Output Format E2E', () => {
     });
 
     it('should return YAML for component detail', async () => {
-      const result = await client.readResource({ uri: 'openapi://components/schemas/Task' });
+      const result = await client.readResource({
+        uri: 'openapi://complex-endpoint-test-api/components/schemas/Task',
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('text/yaml');
@@ -151,7 +159,9 @@ describe('Output Format E2E', () => {
     // We could add a new test here if needed, but the mimeType for templates isn't explicitly set anymore.
 
     it('should handle errors in YAML format (e.g., invalid component name)', async () => {
-      const result = await client.readResource({ uri: 'openapi://components/schemas/InvalidName' });
+      const result = await client.readResource({
+        uri: 'openapi://complex-endpoint-test-api/components/schemas/InvalidName',
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0] as FormattedResultItem;
       // Errors are always text/plain, regardless of configured output format
@@ -173,8 +183,8 @@ describe('Output Format E2E', () => {
       client = testContext.client;
     });
 
-    it('should return minified JSON for openapi://info', async () => {
-      const result = await client.readResource({ uri: 'openapi://info' });
+    it('should return minified JSON for openapi://complex-endpoint-test-api/info', async () => {
+      const result = await client.readResource({ uri: 'openapi://complex-endpoint-test-api/info' });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');
@@ -189,7 +199,9 @@ describe('Output Format E2E', () => {
 
     it('should return minified JSON for operation detail', async () => {
       const path = encodeURIComponent('api/v1/organizations/{orgId}/projects/{projectId}/tasks');
-      const result = await client.readResource({ uri: `openapi://paths/${path}/get` });
+      const result = await client.readResource({
+        uri: `openapi://complex-endpoint-test-api/paths/${path}/get`,
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');
@@ -203,7 +215,9 @@ describe('Output Format E2E', () => {
     });
 
     it('should return minified JSON for component detail', async () => {
-      const result = await client.readResource({ uri: 'openapi://components/schemas/Task' });
+      const result = await client.readResource({
+        uri: 'openapi://complex-endpoint-test-api/components/schemas/Task',
+      });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0];
       expect(content.mimeType).toBe('application/json');

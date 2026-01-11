@@ -3,34 +3,29 @@ import {
   ResourceTemplate,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Variables } from '@modelcontextprotocol/sdk/shared/uriTemplate.js';
-import { SpecLoaderService } from '../types.js';
+import { SpecManagerService } from '../services/spec-manager.js';
 import { IFormatter } from '../services/formatters.js';
 import { RenderablePathItem } from '../rendering/path-item.js';
 import { RenderContext, RenderResultItem } from '../rendering/types.js';
 import { createErrorResult } from '../rendering/utils.js';
-import { buildPathItemUriSuffix } from '../utils/uri-builder.js'; // Added .js extension
-// Import shared handler utils
+import { buildPathItemUriSuffix } from '../utils/uri-builder.js';
 import {
   formatResults,
   isOpenAPIV3,
   FormattedResultItem,
-  getValidatedPathItem, // Import the helper
-} from './handler-utils.js'; // Already has .js
+  getValidatedPathItem,
+} from './handler-utils.js';
 
 const BASE_URI = 'openapi://';
 
-// Removed duplicated FormattedResultItem type - now imported from handler-utils
-// Removed duplicated formatResults function - now imported from handler-utils
-// Removed duplicated isOpenAPIV3 function - now imported from handler-utils
-
 /**
  * Handles requests for listing methods for a specific path.
- * Corresponds to the `openapi://paths/{path}` template.
+ * Corresponds to the `openapi://{specId}/paths/{path}` template.
  */
 export class PathItemHandler {
   constructor(
-    private specLoader: SpecLoaderService,
-    private formatter: IFormatter // Although unused in list view, needed for context
+    private specManager: SpecManagerService,
+    private formatter: IFormatter
   ) {}
 
   getTemplate(): ResourceTemplate {
@@ -45,35 +40,29 @@ export class PathItemHandler {
     uri: URL,
     variables: Variables
   ): Promise<{ contents: FormattedResultItem[] }> => {
+    const specId = variables.specId as string;
     const encodedPath = variables.path as string;
-    // Decode the path received from the URI variable
     const decodedPath = decodeURIComponent(encodedPath || '');
-    // Use the builder to create the suffix, which will re-encode the path correctly
     const pathUriSuffix = buildPathItemUriSuffix(decodedPath);
-    const context: RenderContext = { formatter: this.formatter, baseUri: BASE_URI };
+    const context: RenderContext = { formatter: this.formatter, baseUri: BASE_URI, specId };
     let resultItems: RenderResultItem[];
 
     try {
-      const spec = await this.specLoader.getTransformedSpec({
-        resourceType: 'schema', // Use 'schema' for now
+      const loader = this.specManager.getLoader(specId);
+      const spec = await loader.getTransformedSpec({
+        resourceType: 'schema',
         format: 'openapi',
+        specId,
       });
 
-      // Use imported type guard
       if (!isOpenAPIV3(spec)) {
         throw new Error('Only OpenAPI v3 specifications are supported');
       }
 
-      // --- Use helper to get validated path item ---
       const lookupPath = decodedPath.startsWith('/') ? decodedPath : `/${decodedPath}`;
       const pathItemObj = getValidatedPathItem(spec, lookupPath);
 
-      // Instantiate RenderablePathItem with the validated pathItemObj
-      const renderablePathItem = new RenderablePathItem(
-        pathItemObj, // pathItemObj retrieved safely via helper
-        lookupPath, // Pass the raw, decoded path
-        pathUriSuffix // Pass the correctly built suffix
-      );
+      const renderablePathItem = new RenderablePathItem(pathItemObj, lookupPath, pathUriSuffix);
       resultItems = renderablePathItem.renderList(context);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -81,7 +70,6 @@ export class PathItemHandler {
       resultItems = createErrorResult(pathUriSuffix, message);
     }
 
-    // Use imported formatResults
     const contents = formatResults(context, resultItems);
     return { contents };
   };

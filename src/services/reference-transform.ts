@@ -6,6 +6,7 @@ export interface TransformContext {
   format: 'openapi' | 'asyncapi' | 'graphql';
   path?: string;
   method?: string;
+  specId?: string;
 }
 
 export interface ReferenceObject {
@@ -38,19 +39,19 @@ export class ReferenceTransformService {
 
 export class OpenAPITransformer implements ReferenceTransform<OpenAPIV3.Document> {
   // Handle nested objects recursively
-  private transformObject(obj: unknown, _context: TransformContext): unknown {
+  private transformObject(obj: unknown, context: TransformContext): unknown {
     if (!obj || typeof obj !== 'object') {
       return obj;
     }
 
     // Handle arrays
     if (Array.isArray(obj)) {
-      return obj.map(item => this.transformObject(item, _context));
+      return obj.map(item => this.transformObject(item, context));
     }
 
     // Handle references
     if (this.isReferenceObject(obj)) {
-      return this.transformReference(obj.$ref);
+      return this.transformReference(obj.$ref, context.specId);
     }
 
     // Recursively transform object properties
@@ -59,7 +60,7 @@ export class OpenAPITransformer implements ReferenceTransform<OpenAPIV3.Document
       for (const [key, value] of Object.entries(obj)) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           Object.defineProperty(result, key, {
-            value: this.transformObject(value, _context),
+            value: this.transformObject(value, context),
             enumerable: true,
             writable: true,
             configurable: true,
@@ -74,7 +75,7 @@ export class OpenAPITransformer implements ReferenceTransform<OpenAPIV3.Document
     return typeof obj === 'object' && obj !== null && '$ref' in obj;
   }
 
-  private transformReference(ref: string): TransformedReference {
+  private transformReference(ref: string, specId?: string): TransformedReference {
     // Handle only internal references for now
     if (!ref.startsWith('#/')) {
       return { $ref: ref }; // Keep external refs as-is
@@ -87,8 +88,8 @@ export class OpenAPITransformer implements ReferenceTransform<OpenAPIV3.Document
       const componentType = parts[2];
       const componentName = parts[3];
 
-      // Use the centralized builder to create the correct URI
-      const newUri = buildComponentDetailUri(componentType, componentName);
+      // Use the centralized builder to create the correct URI with specId
+      const newUri = buildComponentDetailUri(specId || 'default', componentType, componentName);
       return {
         $ref: newUri,
       };

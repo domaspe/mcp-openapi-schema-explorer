@@ -43,61 +43,52 @@ export function getOperationSummary(
  */
 export function generateListHint(renderContext: RenderContext, hintContext: HintContext): string {
   let detailUriSuffixPattern: string;
-  let itemTypeName: string; // User-friendly name for the item type in the hint text
-  let exampleUriSuffix: string | undefined; // To hold the generated example URI
+  let itemTypeName: string;
+  let exampleUriSuffix: string | undefined;
+  const specIdPrefix = renderContext.specId ? `${renderContext.specId}/` : '';
 
   switch (hintContext.itemType) {
     case 'componentType':
-      // Listing component types (e.g., schemas, responses) at openapi://components
-      // Hint should point to openapi://components/{type}
-      detailUriSuffixPattern = buildComponentMapUriSuffix('{type}'); // Use placeholder
+      detailUriSuffixPattern = `${specIdPrefix}${buildComponentMapUriSuffix('{type}')}`;
       itemTypeName = 'component type';
       if (hintContext.firstItemExample) {
-        exampleUriSuffix = buildComponentMapUriSuffix(hintContext.firstItemExample);
+        exampleUriSuffix = `${specIdPrefix}${buildComponentMapUriSuffix(hintContext.firstItemExample)}`;
       }
       break;
     case 'componentName':
-      // Listing component names (e.g., MySchema, User) at openapi://components/{type}
-      // Hint should point to openapi://components/{type}/{name}
       if (!hintContext.parentComponentType) {
         console.warn('generateListHint called for componentName without parentComponentType');
-        return ''; // Avoid generating a broken hint
+        return '';
       }
-      // Use the actual parent type and a placeholder for the name
-      detailUriSuffixPattern = buildComponentDetailUriSuffix(
+      detailUriSuffixPattern = `${specIdPrefix}${buildComponentDetailUriSuffix(
         hintContext.parentComponentType,
         '{name}'
-      );
-      itemTypeName = hintContext.parentComponentType.slice(0, -1); // e.g., 'schema' from 'schemas'
+      )}`;
+      itemTypeName = hintContext.parentComponentType.slice(0, -1);
       if (hintContext.firstItemExample) {
-        exampleUriSuffix = buildComponentDetailUriSuffix(
+        exampleUriSuffix = `${specIdPrefix}${buildComponentDetailUriSuffix(
           hintContext.parentComponentType,
           hintContext.firstItemExample
-        );
+        )}`;
       }
       break;
     case 'pathMethod':
-      // Listing methods (e.g., get, post) at openapi://paths/{path}
-      // Hint should point to openapi://paths/{path}/{method}
       if (!hintContext.parentPath) {
         console.warn('generateListHint called for pathMethod without parentPath');
-        return ''; // Avoid generating a broken hint
+        return '';
       }
-      // Use the actual parent path and a placeholder for the method
-      detailUriSuffixPattern = buildOperationUriSuffix(hintContext.parentPath, '{method}');
-      itemTypeName = 'operation'; // Or 'method'? 'operation' seems clearer
+      detailUriSuffixPattern = `${specIdPrefix}${buildOperationUriSuffix(hintContext.parentPath, '{method}')}`;
+      itemTypeName = 'operation';
       if (hintContext.firstItemExample) {
-        // Ensure the example method is valid if needed, though usually it's just 'get', 'post' etc.
-        exampleUriSuffix = buildOperationUriSuffix(
+        exampleUriSuffix = `${specIdPrefix}${buildOperationUriSuffix(
           hintContext.parentPath,
           hintContext.firstItemExample
-        );
+        )}`;
       }
       break;
     default:
-      // Explicitly cast to string to avoid potential 'never' type issue in template literal
       console.warn(`Unknown itemType in generateListHint: ${String(hintContext.itemType)}`);
-      return ''; // Avoid generating a hint if context is unknown
+      return '';
   }
 
   // Construct the full hint URI pattern using the base URI

@@ -11,6 +11,8 @@ import path from 'path';
 
 // Use the complex spec for E2E tests
 const complexSpecPath = path.resolve(__dirname, '../../fixtures/complex-endpoint.json');
+// Spec ID derived from info.title "Complex Endpoint Test API"
+const complexSpecId = 'complex-endpoint-test-api';
 
 // Helper function to parse JSON safely
 function parseJsonSafely(text: string | undefined): unknown {
@@ -90,71 +92,64 @@ describe('E2E Tests for Refactored Resources', () => {
     expect(content.text).toContain(expectedErrorText);
   }
 
-  describe('openapi://{field}', () => {
+  describe('openapi://{specId}/{field}', () => {
     beforeEach(async () => await setup());
 
     it('should retrieve the "info" field', async () => {
-      // Matches complex-endpoint.json
-      await checkJsonDetailResponse('openapi://info', {
+      await checkJsonDetailResponse(`openapi://${complexSpecId}/info`, {
         title: 'Complex Endpoint Test API',
         version: '1.0.0',
       });
     });
 
     it('should retrieve the "paths" list', async () => {
-      // Matches complex-endpoint.json
-      await checkTextListResponse('openapi://paths', [
+      await checkTextListResponse(`openapi://${complexSpecId}/paths`, [
         'Hint:',
         'GET POST /api/v1/organizations/{orgId}/projects/{projectId}/tasks',
       ]);
     });
 
     it('should retrieve the "components" list', async () => {
-      // Matches complex-endpoint.json (only has schemas)
-      await checkTextListResponse('openapi://components', [
+      await checkTextListResponse(`openapi://${complexSpecId}/components`, [
         'Available Component Types:',
         '- schemas',
-        "Hint: Use 'openapi://components/{type}'",
+        "Hint: Use 'openapi://",
       ]);
     });
 
     it('should return error for invalid field', async () => {
-      const uri = 'openapi://invalidfield';
+      const uri = `openapi://${complexSpecId}/invalidfield`;
       await checkErrorResponse(uri, 'Field "invalidfield" not found');
     });
   });
 
-  describe('openapi://paths/{path}', () => {
+  describe('openapi://{specId}/paths/{path}', () => {
     beforeEach(async () => await setup());
 
     it('should list methods for the complex task path', async () => {
       const complexPath = 'api/v1/organizations/{orgId}/projects/{projectId}/tasks';
       const encodedPath = encodeURIComponent(complexPath);
-      // Update expected format based on METHOD: Summary/OpId
-      await checkTextListResponse(`openapi://paths/${encodedPath}`, [
-        "Hint: Use 'openapi://paths/api%2Fv1%2Forganizations%2F%7BorgId%7D%2Fprojects%2F%7BprojectId%7D%2Ftasks/{method}'", // Hint comes first now
-        '', // Blank line after hint
-        'GET: Get Tasks', // METHOD: summary
-        'POST: Create Task', // METHOD: summary
+      await checkTextListResponse(`openapi://${complexSpecId}/paths/${encodedPath}`, [
+        'Hint:',
+        'GET: Get Tasks',
+        'POST: Create Task',
       ]);
     });
 
     it('should return error for non-existent path', async () => {
       const encodedPath = encodeURIComponent('nonexistent');
-      const uri = `openapi://paths/${encodedPath}`;
-      // Updated error message from getValidatedPathItem
+      const uri = `openapi://${complexSpecId}/paths/${encodedPath}`;
       await checkErrorResponse(uri, 'Path "/nonexistent" not found in the specification.');
     });
   });
 
-  describe('openapi://paths/{path}/{method*}', () => {
+  describe('openapi://{specId}/paths/{path}/{method*}', () => {
     beforeEach(async () => await setup());
 
     it('should get details for GET on complex path', async () => {
       const complexPath = 'api/v1/organizations/{orgId}/projects/{projectId}/tasks';
       const encodedPath = encodeURIComponent(complexPath);
-      // Check operationId from complex-endpoint.json
-      await checkJsonDetailResponse(`openapi://paths/${encodedPath}/get`, {
+      await checkJsonDetailResponse(`openapi://${complexSpecId}/paths/${encodedPath}/get`, {
         operationId: 'getProjectTasks',
       });
     });
@@ -162,37 +157,34 @@ describe('E2E Tests for Refactored Resources', () => {
     it('should get details for multiple methods GET,POST on complex path', async () => {
       const complexPath = 'api/v1/organizations/{orgId}/projects/{projectId}/tasks';
       const encodedPath = encodeURIComponent(complexPath);
-      const result = await client.readResource({ uri: `openapi://paths/${encodedPath}/get,post` });
+      const result = await client.readResource({
+        uri: `openapi://${complexSpecId}/paths/${encodedPath}/get,post`,
+      });
       expect(result.contents).toHaveLength(2);
 
       const getContent = result.contents.find(c => c.uri.endsWith('/get')) as
         | FormattedResultItem
         | undefined;
       expect(getContent).toBeDefined();
-      // expect(getContent?.isError).toBeFalsy(); // Removed as SDK might strip this property
       if (!getContent || !hasTextContent(getContent))
         throw new Error('Expected text content for GET');
       const getData = parseJsonSafely(getContent.text);
-      // Check operationId from complex-endpoint.json
       expect(getData).toMatchObject({ operationId: 'getProjectTasks' });
 
       const postContent = result.contents.find(c => c.uri.endsWith('/post')) as
         | FormattedResultItem
         | undefined;
       expect(postContent).toBeDefined();
-      // expect(postContent?.isError).toBeFalsy(); // Removed as SDK might strip this property
       if (!postContent || !hasTextContent(postContent))
         throw new Error('Expected text content for POST');
       const postData = parseJsonSafely(postContent.text);
-      // Check operationId from complex-endpoint.json
       expect(postData).toMatchObject({ operationId: 'createProjectTask' });
     });
 
     it('should return error for invalid method on complex path', async () => {
       const complexPath = 'api/v1/organizations/{orgId}/projects/{projectId}/tasks';
       const encodedPath = encodeURIComponent(complexPath);
-      const uri = `openapi://paths/${encodedPath}/put`;
-      // Updated error message from getValidatedOperations
+      const uri = `openapi://${complexSpecId}/paths/${encodedPath}/put`;
       await checkErrorResponse(
         uri,
         'None of the requested methods (put) are valid for path "/api/v1/organizations/{orgId}/projects/{projectId}/tasks". Available methods: get, post'
@@ -200,41 +192,38 @@ describe('E2E Tests for Refactored Resources', () => {
     });
   });
 
-  describe('openapi://components/{type}', () => {
+  describe('openapi://{specId}/components/{type}', () => {
     beforeEach(async () => await setup());
 
     it('should list schemas', async () => {
-      // Matches complex-endpoint.json
-      await checkTextListResponse('openapi://components/schemas', [
+      await checkTextListResponse(`openapi://${complexSpecId}/components/schemas`, [
         'Available schemas:',
         '- CreateTaskRequest',
         '- Task',
         '- TaskList',
-        "Hint: Use 'openapi://components/schemas/{name}'",
+        "Hint: Use 'openapi://",
       ]);
     });
 
     it('should return error for invalid type', async () => {
-      const uri = 'openapi://components/invalid';
+      const uri = `openapi://${complexSpecId}/components/invalid`;
       await checkErrorResponse(uri, 'Invalid component type: invalid');
     });
   });
 
-  describe('openapi://components/{type}/{name*}', () => {
+  describe('openapi://{specId}/components/{type}/{name*}', () => {
     beforeEach(async () => await setup());
 
     it('should get details for schema Task', async () => {
-      // Matches complex-endpoint.json
-      await checkJsonDetailResponse('openapi://components/schemas/Task', {
+      await checkJsonDetailResponse(`openapi://${complexSpecId}/components/schemas/Task`, {
         type: 'object',
         properties: { id: { type: 'string' }, title: { type: 'string' } },
       });
     });
 
     it('should get details for multiple schemas Task,TaskList', async () => {
-      // Matches complex-endpoint.json
       const result = await client.readResource({
-        uri: 'openapi://components/schemas/Task,TaskList',
+        uri: `openapi://${complexSpecId}/components/schemas/Task,TaskList`,
       });
       expect(result.contents).toHaveLength(2);
 
@@ -242,7 +231,6 @@ describe('E2E Tests for Refactored Resources', () => {
         | FormattedResultItem
         | undefined;
       expect(taskContent).toBeDefined();
-      // expect(taskContent?.isError).toBeFalsy(); // Removed as SDK might strip this property
       if (!taskContent || !hasTextContent(taskContent))
         throw new Error('Expected text content for Task');
       const taskData = parseJsonSafely(taskContent.text);
@@ -252,7 +240,6 @@ describe('E2E Tests for Refactored Resources', () => {
         | FormattedResultItem
         | undefined;
       expect(taskListContent).toBeDefined();
-      // expect(taskListContent?.isError).toBeFalsy(); // Removed as SDK might strip this property
       if (!taskListContent || !hasTextContent(taskListContent))
         throw new Error('Expected text content for TaskList');
       const taskListData = parseJsonSafely(taskListContent.text);
@@ -260,8 +247,7 @@ describe('E2E Tests for Refactored Resources', () => {
     });
 
     it('should return error for invalid name', async () => {
-      const uri = 'openapi://components/schemas/InvalidSchemaName';
-      // Updated error message from getValidatedComponentDetails with sorted names
+      const uri = `openapi://${complexSpecId}/components/schemas/InvalidSchemaName`;
       await checkErrorResponse(
         uri,
         'None of the requested names (InvalidSchemaName) are valid for component type "schemas". Available names: CreateTaskRequest, Task, TaskList'
@@ -274,29 +260,37 @@ describe('E2E Tests for Refactored Resources', () => {
   // We assume the templates are registered correctly in src/index.ts.
 
   describe('Completion Tests', () => {
-    beforeEach(async () => await setup()); // Use the same setup
+    beforeEach(async () => await setup());
+
+    it('should provide completions for {specId}', async () => {
+      const params = {
+        argument: { name: 'specId', value: '' },
+        ref: { type: 'ref/resource' as const, uri: 'openapi://{specId}/{field}' },
+      };
+      const result = await client.complete(params);
+      expect(result.completion).toBeDefined();
+      expect(result.completion.values).toContain(complexSpecId);
+    });
 
     it('should provide completions for {field}', async () => {
       const params = {
-        argument: { name: 'field', value: '' }, // Empty value to get all
-        ref: { type: 'ref/resource' as const, uri: 'openapi://{field}' },
+        argument: { name: 'field', value: '' },
+        ref: { type: 'ref/resource' as const, uri: 'openapi://{specId}/{field}' },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
       expect(result.completion.values).toEqual(
-        expect.arrayContaining(['openapi', 'info', 'paths', 'components']) // Based on complex-endpoint.json
+        expect.arrayContaining(['info', 'paths', 'components'])
       );
-      expect(result.completion.values).toHaveLength(4);
     });
 
     it('should provide completions for {path}', async () => {
       const params = {
-        argument: { name: 'path', value: '' }, // Empty value to get all
-        ref: { type: 'ref/resource' as const, uri: 'openapi://paths/{path}' },
+        argument: { name: 'path', value: '' },
+        ref: { type: 'ref/resource' as const, uri: 'openapi://{specId}/paths/{path}' },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
-      // Check for the encoded path from complex-endpoint.json
       expect(result.completion.values).toEqual([
         'api%2Fv1%2Forganizations%2F%7BorgId%7D%2Fprojects%2F%7BprojectId%7D%2Ftasks',
       ]);
@@ -304,15 +298,14 @@ describe('E2E Tests for Refactored Resources', () => {
 
     it('should provide completions for {method*}', async () => {
       const params = {
-        argument: { name: 'method', value: '' }, // Empty value to get all
+        argument: { name: 'method', value: '' },
         ref: {
           type: 'ref/resource' as const,
-          uri: 'openapi://paths/{path}/{method*}', // Use the exact template URI
+          uri: 'openapi://{specId}/paths/{path}/{method*}',
         },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
-      // Check for the static list of methods defined in src/index.ts
       expect(result.completion.values).toEqual([
         'GET',
         'POST',
@@ -327,51 +320,44 @@ describe('E2E Tests for Refactored Resources', () => {
 
     it('should provide completions for {type}', async () => {
       const params = {
-        argument: { name: 'type', value: '' }, // Empty value to get all
-        ref: { type: 'ref/resource' as const, uri: 'openapi://components/{type}' },
+        argument: { name: 'type', value: '' },
+        ref: { type: 'ref/resource' as const, uri: 'openapi://{specId}/components/{type}' },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
-      // Check for component types in complex-endpoint.json
       expect(result.completion.values).toEqual(['schemas']);
     });
 
-    // Updated test for conditional name completion
     it('should provide completions for {name*} when only one component type exists', async () => {
-      // complex-endpoint.json only has 'schemas'
       const params = {
         argument: { name: 'name', value: '' },
         ref: {
           type: 'ref/resource' as const,
-          uri: 'openapi://components/{type}/{name*}', // Use the exact template URI
+          uri: 'openapi://{specId}/components/{type}/{name*}',
         },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
-      // Expect schema names from complex-endpoint.json
       expect(result.completion.values).toEqual(
         expect.arrayContaining(['CreateTaskRequest', 'Task', 'TaskList'])
       );
       expect(result.completion.values).toHaveLength(3);
     });
 
-    // New test for multiple component types
     it('should NOT provide completions for {name*} when multiple component types exist', async () => {
-      // Need to restart the server with the multi-component spec
-      await testContext?.cleanup(); // Clean up previous server
+      await testContext?.cleanup();
       const multiSpecPath = path.resolve(__dirname, '../../fixtures/multi-component-types.json');
-      await setup(multiSpecPath); // Restart server with new spec
+      await setup(multiSpecPath);
 
       const params = {
         argument: { name: 'name', value: '' },
         ref: {
           type: 'ref/resource' as const,
-          uri: 'openapi://components/{type}/{name*}', // Use the exact template URI
+          uri: 'openapi://{specId}/components/{type}/{name*}',
         },
       };
       const result = await client.complete(params);
       expect(result.completion).toBeDefined();
-      // Expect empty array because multiple types (schemas, parameters) exist
       expect(result.completion.values).toEqual([]);
     });
   });

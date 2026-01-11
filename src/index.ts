@@ -1,222 +1,248 @@
 #!/usr/bin/env node
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'; // Import ResourceTemplate
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { OpenAPI } from 'openapi-types'; // Import OpenAPIV3 as well
 import { loadConfig } from './config.js';
 
-// Import new handlers
 import { TopLevelFieldHandler } from './handlers/top-level-field-handler.js';
 import { PathItemHandler } from './handlers/path-item-handler.js';
 import { OperationHandler } from './handlers/operation-handler.js';
 import { ComponentMapHandler } from './handlers/component-map-handler.js';
 import { ComponentDetailHandler } from './handlers/component-detail-handler.js';
+import { SpecsListHandler } from './handlers/specs-list-handler.js';
 import { OpenAPITransformer, ReferenceTransformService } from './services/reference-transform.js';
-import { SpecLoaderService } from './services/spec-loader.js';
+import { SpecManagerService } from './services/spec-manager.js';
 import { createFormatter } from './services/formatters.js';
-import { encodeUriPathComponent } from './utils/uri-builder.js'; // Import specific function
-import { isOpenAPIV3, getValidatedComponentMap } from './handlers/handler-utils.js'; // Import type guard and helper
-import { VERSION } from './version.js'; // Import the generated version
+import { encodeUriPathComponent } from './utils/uri-builder.js';
+import { isOpenAPIV3, getValidatedComponentMap } from './handlers/handler-utils.js';
+import { VERSION } from './version.js';
 
 async function main(): Promise<void> {
   try {
-    // Get spec path and options from command line arguments
-    const [, , specPath, ...args] = process.argv;
-    const options = {
-      outputFormat: args.includes('--output-format')
-        ? args[args.indexOf('--output-format') + 1]
-        : undefined,
-    };
+    // Parse CLI args: collect paths before --output-format
+    const args = process.argv.slice(2);
+    const outputFormatIndex = args.indexOf('--output-format');
+    let specPaths: string[];
+    let options: { outputFormat?: string } = {};
 
-    // Load configuration
-    const config = loadConfig(specPath, options);
+    if (outputFormatIndex === -1) {
+      specPaths = args;
+    } else {
+      specPaths = args.slice(0, outputFormatIndex);
+      options.outputFormat = args[outputFormatIndex + 1];
+    }
+
+    const config = loadConfig(specPaths, options);
 
     // Initialize services
     const referenceTransform = new ReferenceTransformService();
     referenceTransform.registerTransformer('openapi', new OpenAPITransformer());
 
-    const specLoader = new SpecLoaderService(config.specPath, referenceTransform);
-    await specLoader.loadSpec();
+    const specManager = new SpecManagerService(referenceTransform);
+    await specManager.loadSpecs(config.specPaths);
 
-    // Get the loaded spec to extract the title
-    const spec: OpenAPI.Document = await specLoader.getSpec(); // Rename back to spec
-    // Get the transformed spec for use in completions
-    const transformedSpec: OpenAPI.Document = await specLoader.getTransformedSpec({
-      resourceType: 'schema', // Use a default context
-      format: 'openapi',
-    });
-    const defaultServerName = 'OpenAPI Schema Explorer';
-    // Use original spec for title
-    const serverName = spec.info?.title
-      ? `Schema Explorer for ${spec.info.title}`
-      : defaultServerName;
+    const loadedSpecs = specManager.getAllSpecs();
+    const specSlugs = specManager.getSpecSlugs();
 
-    // Brief help content for LLMs
-    const helpContent = `Use resorces/templates/list to get a list of available resources. Use openapi://paths to get a list of all endpoints.`;
+    // Server name based on loaded specs
+    const serverName =
+      loadedSpecs.length === 1
+        ? `Schema Explorer for ${loadedSpecs[0].title}`
+        : `Schema Explorer for ${loadedSpecs.length} APIs`;
 
-    // Create MCP server with dynamic name
+    const helpContent = `Use openapi://specs to list available APIs. Then use openapi://{specId}/paths to explore endpoints.`;
+
     const server = new McpServer(
-      {
-        name: serverName,
-        version: VERSION, // Use the imported version
-      },
-      {
-        instructions: helpContent,
-      }
+      { name: serverName, version: VERSION },
+      { instructions: helpContent }
     );
 
-    // Set up formatter and new handlers
     const formatter = createFormatter(config.outputFormat);
-    const topLevelFieldHandler = new TopLevelFieldHandler(specLoader, formatter);
-    const pathItemHandler = new PathItemHandler(specLoader, formatter);
-    const operationHandler = new OperationHandler(specLoader, formatter);
-    const componentMapHandler = new ComponentMapHandler(specLoader, formatter);
-    const componentDetailHandler = new ComponentDetailHandler(specLoader, formatter);
 
-    // --- Define Resource Templates and Register Handlers ---
+    // Initialize handlers with specManager
+    const specsListHandler = new SpecsListHandler(specManager);
+    const topLevelFieldHandler = new TopLevelFieldHandler(specManager, formatter);
+    const pathItemHandler = new PathItemHandler(specManager, formatter);
+    const operationHandler = new OperationHandler(specManager, formatter);
+    const componentMapHandler = new ComponentMapHandler(specManager, formatter);
+    const componentDetailHandler = new ComponentDetailHandler(specManager, formatter);
 
-    // Helper to get dynamic field list for descriptions
-    const getFieldList = (): string => Object.keys(transformedSpec).join(', ');
-    // Helper to get dynamic component type list for descriptions
-    const getComponentTypeList = (): string => {
-      if (isOpenAPIV3(transformedSpec) && transformedSpec.components) {
-        return Object.keys(transformedSpec.components).join(', ');
+    // Helper to get paths for a specific spec
+    const getSpecPaths = async (specId: string): Promise<string[]> => {
+      try {
+        const loader = specManager.getLoader(specId);
+        const spec = await loader.getTransformedSpec({
+          resourceType: 'schema',
+          format: 'openapi',
+          specId,
+        });
+        return Object.keys(spec.paths ?? {}).map(encodeUriPathComponent);
+      } catch {
+        return [];
       }
-      return ''; // Return empty if no components or not V3
     };
 
-    // 1. openapi://{field}
-    const fieldTemplate = new ResourceTemplate('openapi://{field}', {
-      list: undefined, // List is handled by the handler logic based on field value
-      complete: {
-        field: (): string[] => Object.keys(transformedSpec), // Use transformedSpec
-      },
-    });
+    // Helper to get component types for a specific spec
+    const getSpecComponentTypes = async (specId: string): Promise<string[]> => {
+      try {
+        const loader = specManager.getLoader(specId);
+        const spec = await loader.getTransformedSpec({
+          resourceType: 'schema',
+          format: 'openapi',
+          specId,
+        });
+        if (isOpenAPIV3(spec) && spec.components) {
+          return Object.keys(spec.components);
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    };
+
+    // 0. openapi://specs - List all loaded specs
     server.resource(
-      'openapi-field', // Unique ID for the resource registration
-      fieldTemplate,
+      'openapi-specs-list',
+      new ResourceTemplate('openapi://specs', { list: undefined }),
       {
-        // MimeType varies (text/plain for lists, JSON/YAML for details)
-        description: `Access top-level fields like ${getFieldList()}. (e.g., openapi://info)`,
-        title: 'OpenAPI Field/List', // Generic name
+        mimeType: 'text/plain',
+        description: 'List all available API specifications',
+        title: 'API Specs List',
+      },
+      specsListHandler.handleRequest
+    );
+
+    // 1. openapi://{specId}/{field}
+    server.resource(
+      'openapi-field',
+      new ResourceTemplate('openapi://{specId}/{field}', {
+        list: undefined,
+        complete: {
+          specId: () => specSlugs,
+          field: () => ['info', 'servers', 'paths', 'components', 'tags', 'externalDocs'],
+        },
+      }),
+      {
+        description: 'Access top-level fields of a specific API spec (e.g., openapi://my-api/info)',
+        title: 'OpenAPI Field',
       },
       topLevelFieldHandler.handleRequest
     );
 
-    // 2. openapi://paths/{path}
-    const pathTemplate = new ResourceTemplate('openapi://paths/{path}', {
-      list: undefined, // List is handled by the handler
-      complete: {
-        path: (): string[] => Object.keys(transformedSpec.paths ?? {}).map(encodeUriPathComponent), // Use imported function directly
-      },
-    });
+    // 2. openapi://{specId}/paths/{path}
     server.resource(
       'openapi-path-methods',
-      pathTemplate,
+      new ResourceTemplate('openapi://{specId}/paths/{path}', {
+        list: undefined,
+        complete: {
+          specId: () => specSlugs,
+          path: async () => {
+            // Return paths from first spec for completion
+            if (specSlugs.length > 0) {
+              return getSpecPaths(specSlugs[0]);
+            }
+            return [];
+          },
+        },
+      }),
       {
-        mimeType: 'text/plain', // This always returns a list
+        mimeType: 'text/plain',
         description:
-          'List methods for a specific path (URL encode paths with slashes). (e.g., openapi://paths/users%2F%7Bid%7D)',
+          'List methods for a specific path (e.g., openapi://my-api/paths/users%2F%7Bid%7D)',
         title: 'Path Methods List',
       },
       pathItemHandler.handleRequest
     );
 
-    // 3. openapi://paths/{path}/{method*}
-    const operationTemplate = new ResourceTemplate('openapi://paths/{path}/{method*}', {
-      list: undefined, // Detail view handled by handler
-      complete: {
-        path: (): string[] => Object.keys(transformedSpec.paths ?? {}).map(encodeUriPathComponent), // Use imported function directly
-        method: (): string[] => [
-          // Provide static list of common methods
-          'GET',
-          'POST',
-          'PUT',
-          'DELETE',
-          'PATCH',
-          'OPTIONS',
-          'HEAD',
-          'TRACE',
-        ],
-      },
-    });
+    // 3. openapi://{specId}/paths/{path}/{method*}
     server.resource(
       'openapi-operation-detail',
-      operationTemplate,
+      new ResourceTemplate('openapi://{specId}/paths/{path}/{method*}', {
+        list: undefined,
+        complete: {
+          specId: () => specSlugs,
+          path: async () => {
+            if (specSlugs.length > 0) {
+              return getSpecPaths(specSlugs[0]);
+            }
+            return [];
+          },
+          method: () => ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', 'TRACE'],
+        },
+      }),
       {
-        mimeType: formatter.getMimeType(), // Detail view uses formatter
+        mimeType: formatter.getMimeType(),
         description:
-          'Get details for one or more operations (comma-separated). (e.g., openapi://paths/users%2F%7Bid%7D/get,post)',
+          'Get details for operations (e.g., openapi://my-api/paths/users%2F%7Bid%7D/get,post)',
         title: 'Operation Detail',
       },
       operationHandler.handleRequest
     );
 
-    // 4. openapi://components/{type}
-    const componentMapTemplate = new ResourceTemplate('openapi://components/{type}', {
-      list: undefined, // List is handled by the handler
-      complete: {
-        type: (): string[] => {
-          // Use type guard to ensure spec is V3 before accessing components
-          if (isOpenAPIV3(transformedSpec)) {
-            return Object.keys(transformedSpec.components ?? {});
-          }
-          return []; // Return empty array if not V3 (shouldn't happen ideally)
-        },
-      },
-    });
+    // 4. openapi://{specId}/components/{type}
     server.resource(
       'openapi-component-list',
-      componentMapTemplate,
+      new ResourceTemplate('openapi://{specId}/components/{type}', {
+        list: undefined,
+        complete: {
+          specId: () => specSlugs,
+          type: async () => {
+            if (specSlugs.length > 0) {
+              return getSpecComponentTypes(specSlugs[0]);
+            }
+            return [];
+          },
+        },
+      }),
       {
-        mimeType: 'text/plain', // This always returns a list
-        description: `List components of a specific type like ${getComponentTypeList()}. (e.g., openapi://components/schemas)`,
+        mimeType: 'text/plain',
+        description:
+          'List components of a specific type (e.g., openapi://my-api/components/schemas)',
         title: 'Component List',
       },
       componentMapHandler.handleRequest
     );
 
-    // 5. openapi://components/{type}/{name*}
-    const componentDetailTemplate = new ResourceTemplate('openapi://components/{type}/{name*}', {
-      list: undefined, // Detail view handled by handler
-      complete: {
-        type: (): string[] => {
-          // Use type guard to ensure spec is V3 before accessing components
-          if (isOpenAPIV3(transformedSpec)) {
-            return Object.keys(transformedSpec.components ?? {});
-          }
-          return []; // Return empty array if not V3
-        },
-        name: (): string[] => {
-          // Provide names only if there's exactly one component type defined
-          if (
-            isOpenAPIV3(transformedSpec) &&
-            transformedSpec.components &&
-            Object.keys(transformedSpec.components).length === 1
-          ) {
-            // Get the single component type key (e.g., 'schemas')
-            const componentTypeKey = Object.keys(transformedSpec.components)[0];
-            // Use the helper to safely get the map
-            try {
-              const componentTypeMap = getValidatedComponentMap(transformedSpec, componentTypeKey);
-              return Object.keys(componentTypeMap);
-            } catch (error) {
-              // Should not happen if key came from Object.keys, but handle defensively
-              console.error(`Error getting component map for key ${componentTypeKey}:`, error);
-              return [];
-            }
-          }
-          // Otherwise, return no completions for name
-          return [];
-        },
-      },
-    });
+    // 5. openapi://{specId}/components/{type}/{name*}
     server.resource(
       'openapi-component-detail',
-      componentDetailTemplate,
+      new ResourceTemplate('openapi://{specId}/components/{type}/{name*}', {
+        list: undefined,
+        complete: {
+          specId: () => specSlugs,
+          type: async () => {
+            if (specSlugs.length > 0) {
+              return getSpecComponentTypes(specSlugs[0]);
+            }
+            return [];
+          },
+          name: async () => {
+            // Only provide name completions if single spec with single component type
+            if (specSlugs.length === 1) {
+              try {
+                const loader = specManager.getLoader(specSlugs[0]);
+                const spec = await loader.getTransformedSpec({
+                  resourceType: 'schema',
+                  format: 'openapi',
+                  specId: specSlugs[0],
+                });
+                if (isOpenAPIV3(spec) && spec.components) {
+                  const types = Object.keys(spec.components);
+                  if (types.length === 1) {
+                    const componentMap = getValidatedComponentMap(spec, types[0]);
+                    return Object.keys(componentMap);
+                  }
+                }
+              } catch {
+                return [];
+              }
+            }
+            return [];
+          },
+        },
+      }),
       {
-        mimeType: formatter.getMimeType(), // Detail view uses formatter
-        description:
-          'Get details for one or more components (comma-separated). (e.g., openapi://components/schemas/User,Task)',
+        mimeType: formatter.getMimeType(),
+        description: 'Get component details (e.g., openapi://my-api/components/schemas/User,Task)',
         title: 'Component Detail',
       },
       componentDetailHandler.handleRequest
@@ -234,7 +260,6 @@ async function main(): Promise<void> {
   }
 }
 
-// Run the server
 main().catch(error => {
   console.error('Unhandled error:', error instanceof Error ? error.message : String(error));
   process.exit(1);

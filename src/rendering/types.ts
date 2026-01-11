@@ -26,6 +26,8 @@ export interface RenderContext {
   formatter: IFormatter;
   /** Base URI for generating resource links (e.g., "openapi://"). */
   baseUri: string;
+  /** Spec identifier for multi-spec support. */
+  specId?: string;
 }
 
 /**

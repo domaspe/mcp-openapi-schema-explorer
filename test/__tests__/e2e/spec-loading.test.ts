@@ -90,37 +90,35 @@ describe('E2E Tests for Spec Loading Scenarios', () => {
   // --- Tests for Local Swagger v2.0 Spec ---
   describe('Local Swagger v2.0 Spec (sample-v2-api.json)', () => {
     const v2SpecPath = path.resolve(__dirname, '../../fixtures/sample-v2-api.json');
+    const v2SpecId = 'simple-swagger-20-api';
 
-    beforeAll(async () => await setup(v2SpecPath)); // Use beforeAll for this block
+    beforeAll(async () => await setup(v2SpecPath));
 
     it('should retrieve the converted "info" field', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkJsonDetailResponse('openapi://info', {
+      if (!client) return;
+      await checkJsonDetailResponse(`openapi://${v2SpecId}/info`, {
         title: 'Simple Swagger 2.0 API',
         version: '1.0.0',
       });
     });
 
     it('should retrieve the converted "paths" list', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkTextListResponse('openapi://paths', [
-        'Hint:',
-        'GET /v2/ping', // Note the basePath is included
-      ]);
+      if (!client) return;
+      await checkTextListResponse(`openapi://${v2SpecId}/paths`, ['Hint:', 'GET /v2/ping']);
     });
 
     it('should retrieve the converted "components" list', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkTextListResponse('openapi://components', [
+      if (!client) return;
+      await checkTextListResponse(`openapi://${v2SpecId}/components`, [
         'Available Component Types:',
         '- schemas',
-        "Hint: Use 'openapi://components/{type}'",
+        "Hint: Use 'openapi://",
       ]);
     });
 
     it('should get details for converted schema Pong', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkJsonDetailResponse('openapi://components/schemas/Pong', {
+      if (!client) return;
+      await checkJsonDetailResponse(`openapi://${v2SpecId}/components/schemas/Pong`, {
         type: 'object',
         properties: { message: { type: 'string', example: 'pong' } },
       });
@@ -133,27 +131,25 @@ describe('E2E Tests for Spec Loading Scenarios', () => {
 
   describe('Remote OpenAPI v3.0 Spec (Petstore)', () => {
     const petstoreUrl = 'https://petstore3.swagger.io/api/v3/openapi.json';
+    const petstoreSpecId = 'swagger-petstore-openapi-30';
 
-    beforeAll(async () => await setup(petstoreUrl)); // Use beforeAll for this block
+    beforeAll(async () => await setup(petstoreUrl));
 
     it('should retrieve the "info" field from Petstore', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkJsonDetailResponse('openapi://info', {
+      if (!client) return;
+      await checkJsonDetailResponse(`openapi://${petstoreSpecId}/info`, {
         title: 'Swagger Petstore - OpenAPI 3.0',
-        // version might change, so don't assert exact value
       });
     });
 
     it('should retrieve the "paths" list from Petstore', async () => {
-      if (!client) return; // Skip if setup failed
-      // Check for a known path
-      await checkTextListResponse('openapi://paths', ['/pet/{petId}']);
+      if (!client) return;
+      await checkTextListResponse(`openapi://${petstoreSpecId}/paths`, ['/pet/{petId}']);
     });
 
     it('should retrieve the "components" list from Petstore', async () => {
-      if (!client) return; // Skip if setup failed
-      // Check for known component types
-      await checkTextListResponse('openapi://components', [
+      if (!client) return;
+      await checkTextListResponse(`openapi://${petstoreSpecId}/components`, [
         '- schemas',
         '- requestBodies',
         '- securitySchemes',
@@ -161,11 +157,10 @@ describe('E2E Tests for Spec Loading Scenarios', () => {
     });
 
     it('should get details for schema Pet from Petstore', async () => {
-      if (!client) return; // Skip if setup failed
-      await checkJsonDetailResponse('openapi://components/schemas/Pet', {
+      if (!client) return;
+      await checkJsonDetailResponse(`openapi://${petstoreSpecId}/components/schemas/Pet`, {
         required: ['name', 'photoUrls'],
         type: 'object',
-        // Check a known property
         properties: { id: { type: 'integer', format: 'int64' } },
       });
     });

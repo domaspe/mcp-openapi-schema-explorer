@@ -1,6 +1,7 @@
 import { OpenAPIV3 } from 'openapi-types';
 import { RequestId } from '@modelcontextprotocol/sdk/types.js';
 import { OperationHandler } from '../../../../src/handlers/operation-handler';
+import { SpecManagerService } from '../../../../src/services/spec-manager';
 import { SpecLoaderService } from '../../../../src/types';
 import { IFormatter, JsonFormatter } from '../../../../src/services/formatters';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -13,6 +14,13 @@ const mockSpecLoader: SpecLoaderService = {
   getSpec: jest.fn(),
   getTransformedSpec: mockGetTransformedSpec,
 };
+
+const mockSpecManager = {
+  getLoader: jest.fn().mockReturnValue(mockSpecLoader),
+  getAllSpecs: jest.fn(),
+  getSpecSlugs: jest.fn(),
+  getSpec: jest.fn(),
+} as unknown as SpecManagerService;
 
 const mockFormatter: IFormatter = new JsonFormatter();
 
@@ -40,6 +48,7 @@ const sampleSpec: OpenAPIV3.Document = {
   components: {},
 };
 
+const SPEC_ID = 'test-api';
 const encodedPathItems = encodeURIComponent('items');
 const encodedPathNonExistent = encodeURIComponent('nonexistent');
 
@@ -47,9 +56,10 @@ describe('OperationHandler', () => {
   let handler: OperationHandler;
 
   beforeEach(() => {
-    handler = new OperationHandler(mockSpecLoader, mockFormatter);
+    handler = new OperationHandler(mockSpecManager, mockFormatter);
     mockGetTransformedSpec.mockReset();
-    mockGetTransformedSpec.mockResolvedValue(sampleSpec); // Default mock
+    mockGetTransformedSpec.mockResolvedValue(sampleSpec);
+    (mockSpecManager.getLoader as jest.Mock).mockReturnValue(mockSpecLoader);
   });
 
   it('should return the correct template', () => {
@@ -67,18 +77,20 @@ describe('OperationHandler', () => {
     };
 
     it('should return detail for a single valid method', async () => {
-      const variables: Variables = { path: encodedPathItems, method: 'get' }; // Use 'method' key
-      const uri = new URL(`openapi://paths/${encodedPathItems}/get`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems, method: 'get' };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/get`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
+      expect(mockSpecManager.getLoader).toHaveBeenCalledWith(SPEC_ID);
       expect(mockGetTransformedSpec).toHaveBeenCalledWith({
         resourceType: 'schema',
         format: 'openapi',
+        specId: SPEC_ID,
       });
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}/get`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/get`,
         mimeType: 'application/json',
         text: JSON.stringify(getOperation, null, 2),
         isError: false,
@@ -86,20 +98,24 @@ describe('OperationHandler', () => {
     });
 
     it('should return details for multiple valid methods (array input)', async () => {
-      const variables: Variables = { path: encodedPathItems, method: ['get', 'post'] }; // Use 'method' key with array
-      const uri = new URL(`openapi://paths/${encodedPathItems}/get,post`); // URI might not reflect array input
+      const variables: Variables = {
+        specId: SPEC_ID,
+        path: encodedPathItems,
+        method: ['get', 'post'],
+      };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/get,post`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
       expect(result.contents).toHaveLength(2);
       expect(result.contents).toContainEqual({
-        uri: `openapi://paths/${encodedPathItems}/get`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/get`,
         mimeType: 'application/json',
         text: JSON.stringify(getOperation, null, 2),
         isError: false,
       });
       expect(result.contents).toContainEqual({
-        uri: `openapi://paths/${encodedPathItems}/post`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/post`,
         mimeType: 'application/json',
         text: JSON.stringify(postOperation, null, 2),
         isError: false,
@@ -107,8 +123,8 @@ describe('OperationHandler', () => {
     });
 
     it('should return error for non-existent path', async () => {
-      const variables: Variables = { path: encodedPathNonExistent, method: 'get' };
-      const uri = new URL(`openapi://paths/${encodedPathNonExistent}/get`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathNonExistent, method: 'get' };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathNonExistent}/get`);
       const expectedLogMessage = /Path "\/nonexistent" not found/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -116,9 +132,8 @@ describe('OperationHandler', () => {
       );
 
       expect(result.contents).toHaveLength(1);
-      // Expect the specific error message from getValidatedPathItem
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathNonExistent}/get`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathNonExistent}/get`,
         mimeType: 'text/plain',
         text: 'Path "/nonexistent" not found in the specification.',
         isError: true,
@@ -126,8 +141,8 @@ describe('OperationHandler', () => {
     });
 
     it('should return error for non-existent method', async () => {
-      const variables: Variables = { path: encodedPathItems, method: 'put' };
-      const uri = new URL(`openapi://paths/${encodedPathItems}/put`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems, method: 'put' };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/put`);
       const expectedLogMessage = /None of the requested methods \(put\) are valid/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -135,21 +150,17 @@ describe('OperationHandler', () => {
       );
 
       expect(result.contents).toHaveLength(1);
-      // Expect the specific error message from getValidatedOperations
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}/put`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/put`,
         mimeType: 'text/plain',
         text: 'None of the requested methods (put) are valid for path "/items". Available methods: get, post',
         isError: true,
       });
     });
 
-    // Remove test for mix of valid/invalid methods, as getValidatedOperations throws now
-    // it('should handle mix of valid and invalid methods', async () => { ... });
-
     it('should handle empty method array', async () => {
-      const variables: Variables = { path: encodedPathItems, method: [] };
-      const uri = new URL(`openapi://paths/${encodedPathItems}/`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems, method: [] };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/`);
       const expectedLogMessage = /No valid HTTP method specified/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -158,7 +169,7 @@ describe('OperationHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}/`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/`,
         mimeType: 'text/plain',
         text: 'No valid HTTP method specified.',
         isError: true,
@@ -168,8 +179,8 @@ describe('OperationHandler', () => {
     it('should handle spec loading errors', async () => {
       const error = new Error('Spec load failed');
       mockGetTransformedSpec.mockRejectedValue(error);
-      const variables: Variables = { path: encodedPathItems, method: 'get' };
-      const uri = new URL(`openapi://paths/${encodedPathItems}/get`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems, method: 'get' };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/get`);
       const expectedLogMessage = /Spec load failed/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -178,7 +189,7 @@ describe('OperationHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}/get`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/get`,
         mimeType: 'text/plain',
         text: 'Spec load failed',
         isError: true,
@@ -188,8 +199,8 @@ describe('OperationHandler', () => {
     it('should handle non-OpenAPI v3 spec', async () => {
       const invalidSpec = { swagger: '2.0', info: {} };
       mockGetTransformedSpec.mockResolvedValue(invalidSpec as unknown as OpenAPIV3.Document);
-      const variables: Variables = { path: encodedPathItems, method: 'get' };
-      const uri = new URL(`openapi://paths/${encodedPathItems}/get`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems, method: 'get' };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}/get`);
       const expectedLogMessage = /Only OpenAPI v3 specifications are supported/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -198,7 +209,7 @@ describe('OperationHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}/get`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}/get`,
         mimeType: 'text/plain',
         text: 'Only OpenAPI v3 specifications are supported',
         isError: true,

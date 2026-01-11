@@ -18,12 +18,13 @@ export function formatResults(
   context: RenderContext,
   items: RenderResultItem[]
 ): FormattedResultItem[] {
-  // Add type check for formatter existence in context
   if (!context.formatter) {
     throw new Error('Formatter is missing in RenderContext for formatResults');
   }
   return items.map(item => {
-    const uri = `${context.baseUri}${item.uriSuffix}`;
+    // Include specId in URI if present
+    const specIdPrefix = context.specId ? `${context.specId}/` : '';
+    const uri = `${context.baseUri}${specIdPrefix}${item.uriSuffix}`;
     let text: string;
     let mimeType: string;
 

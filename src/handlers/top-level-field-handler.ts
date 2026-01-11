@@ -3,31 +3,25 @@ import {
   ResourceTemplate,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Variables } from '@modelcontextprotocol/sdk/shared/uriTemplate.js';
-// ResourceContents is the base type for a single item, not the array type needed here.
-// We'll define the array structure inline based on TextResourceContentsSchema.
 
-import { SpecLoaderService } from '../types.js';
+import { SpecManagerService } from '../services/spec-manager.js';
 import { IFormatter } from '../services/formatters.js';
 import { RenderableDocument } from '../rendering/document.js';
 import { RenderablePaths } from '../rendering/paths.js';
 import { RenderableComponents } from '../rendering/components.js';
 import { RenderContext, RenderResultItem } from '../rendering/types.js';
 import { createErrorResult } from '../rendering/utils.js';
-// Import shared handler utils
-import { formatResults, isOpenAPIV3, FormattedResultItem } from './handler-utils.js'; // Already has .js
+import { formatResults, isOpenAPIV3, FormattedResultItem } from './handler-utils.js';
 
 const BASE_URI = 'openapi://';
 
-// Removed duplicated FormattedResultItem type - now imported from handler-utils
-// Removed duplicated formatResults function - now imported from handler-utils
-
 /**
  * Handles requests for top-level OpenAPI fields (info, servers, paths list, components list).
- * Corresponds to the `openapi://{field}` template.
+ * Corresponds to the `openapi://{specId}/{field}` template.
  */
 export class TopLevelFieldHandler {
   constructor(
-    private specLoader: SpecLoaderService,
+    private specManager: SpecManagerService,
     private formatter: IFormatter
   ) {}
 
@@ -42,28 +36,26 @@ export class TopLevelFieldHandler {
   handleRequest: ReadResourceTemplateCallback = async (
     uri: URL,
     variables: Variables
-    // matchedTemplate is not needed if we only handle one template
   ): Promise<{ contents: FormattedResultItem[] }> => {
-    // Return type uses the defined array structure
+    const specId = variables.specId as string;
     const field = variables.field as string;
-    const context: RenderContext = { formatter: this.formatter, baseUri: BASE_URI };
+    const context: RenderContext = { formatter: this.formatter, baseUri: BASE_URI, specId };
     let resultItems: RenderResultItem[];
 
     try {
-      const spec = await this.specLoader.getTransformedSpec({
-        // Use 'schema' as placeholder resourceType for transformation context
+      const loader = this.specManager.getLoader(specId);
+      const spec = await loader.getTransformedSpec({
         resourceType: 'schema',
         format: 'openapi',
+        specId,
       });
 
-      // Use imported type guard
       if (!isOpenAPIV3(spec)) {
         throw new Error('Only OpenAPI v3 specifications are supported');
       }
 
       const renderableDoc = new RenderableDocument(spec);
 
-      // Route based on the field name
       if (field === 'paths') {
         const pathsObj = renderableDoc.getPathsObject();
         resultItems = new RenderablePaths(pathsObj).renderList(context);
@@ -71,20 +63,16 @@ export class TopLevelFieldHandler {
         const componentsObj = renderableDoc.getComponentsObject();
         resultItems = new RenderableComponents(componentsObj).renderList(context);
       } else {
-        // Handle other top-level fields (info, servers, tags, etc.)
         const fieldObject = renderableDoc.getTopLevelField(field);
         resultItems = renderableDoc.renderTopLevelFieldDetail(context, fieldObject, field);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Error handling request ${uri.href}: ${message}`);
-      resultItems = createErrorResult(field, message); // Use field as uriSuffix for error
+      resultItems = createErrorResult(field, message);
     }
 
-    // Format results into the final structure
     const contents: FormattedResultItem[] = formatResults(context, resultItems);
-    // Return the object with the correctly typed contents array
-    // Use imported formatResults
     return { contents };
   };
 

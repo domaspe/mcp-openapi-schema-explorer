@@ -1,6 +1,7 @@
 import { OpenAPIV3 } from 'openapi-types';
 import { RequestId } from '@modelcontextprotocol/sdk/types.js';
 import { PathItemHandler } from '../../../../src/handlers/path-item-handler';
+import { SpecManagerService } from '../../../../src/services/spec-manager';
 import { SpecLoaderService } from '../../../../src/types';
 import { IFormatter, JsonFormatter } from '../../../../src/services/formatters';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,7 +16,14 @@ const mockSpecLoader: SpecLoaderService = {
   getTransformedSpec: mockGetTransformedSpec,
 };
 
-const mockFormatter: IFormatter = new JsonFormatter(); // Needed for context
+const mockSpecManager = {
+  getLoader: jest.fn().mockReturnValue(mockSpecLoader),
+  getAllSpecs: jest.fn(),
+  getSpecSlugs: jest.fn(),
+  getSpec: jest.fn(),
+} as unknown as SpecManagerService;
+
+const mockFormatter: IFormatter = new JsonFormatter();
 
 // Sample Data
 const samplePathItem: OpenAPIV3.PathItemObject = {
@@ -27,11 +35,12 @@ const sampleSpec: OpenAPIV3.Document = {
   info: { title: 'Test API', version: '1.0.0' },
   paths: {
     '/items': samplePathItem,
-    '/empty': {}, // Path with no methods
+    '/empty': {},
   },
   components: {},
 };
 
+const SPEC_ID = 'test-api';
 const encodedPathItems = encodeURIComponent('items');
 const encodedPathEmpty = encodeURIComponent('empty');
 const encodedPathNonExistent = encodeURIComponent('nonexistent');
@@ -40,9 +49,10 @@ describe('PathItemHandler', () => {
   let handler: PathItemHandler;
 
   beforeEach(() => {
-    handler = new PathItemHandler(mockSpecLoader, mockFormatter);
+    handler = new PathItemHandler(mockSpecManager, mockFormatter);
     mockGetTransformedSpec.mockReset();
-    mockGetTransformedSpec.mockResolvedValue(sampleSpec); // Default mock
+    mockGetTransformedSpec.mockResolvedValue(sampleSpec);
+    (mockSpecManager.getLoader as jest.Mock).mockReturnValue(mockSpecLoader);
   });
 
   it('should return the correct template', () => {
@@ -60,48 +70,48 @@ describe('PathItemHandler', () => {
     };
 
     it('should list methods for a valid path', async () => {
-      const variables: Variables = { path: encodedPathItems };
-      const uri = new URL(`openapi://paths/${encodedPathItems}`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
+      expect(mockSpecManager.getLoader).toHaveBeenCalledWith(SPEC_ID);
       expect(mockGetTransformedSpec).toHaveBeenCalledWith({
         resourceType: 'schema',
         format: 'openapi',
+        specId: SPEC_ID,
       });
       expect(result.contents).toHaveLength(1);
       const content = result.contents[0] as FormattedResultItem;
       expect(content).toMatchObject({
-        uri: `openapi://paths/${encodedPathItems}`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}`,
         mimeType: 'text/plain',
         isError: false,
       });
-      // Check for hint first, then methods
-      expect(content.text).toContain("Hint: Use 'openapi://paths/items/{method}'");
+      expect(content.text).toContain(`Hint: Use 'openapi://${SPEC_ID}/paths/items/{method}'`);
       expect(content.text).toContain('GET: Get Item');
       expect(content.text).toContain('POST: Create Item');
-      // Ensure the old "Methods for..." header is not present if hint is first
       expect(content.text).not.toContain('Methods for items:');
     });
 
     it('should handle path with no methods', async () => {
-      const variables: Variables = { path: encodedPathEmpty };
-      const uri = new URL(`openapi://paths/${encodedPathEmpty}`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathEmpty };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathEmpty}`);
 
       const result = await handler.handleRequest(uri, variables, mockExtra);
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathEmpty}`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathEmpty}`,
         mimeType: 'text/plain',
         text: 'No standard HTTP methods found for path: empty',
-        isError: false, // Not an error, just no methods
+        isError: false,
       });
     });
 
     it('should return error for non-existent path', async () => {
-      const variables: Variables = { path: encodedPathNonExistent };
-      const uri = new URL(`openapi://paths/${encodedPathNonExistent}`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathNonExistent };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathNonExistent}`);
       const expectedLogMessage = /Path "\/nonexistent" not found/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -109,9 +119,8 @@ describe('PathItemHandler', () => {
       );
 
       expect(result.contents).toHaveLength(1);
-      // Expect the specific error message from getValidatedPathItem
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathNonExistent}`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathNonExistent}`,
         mimeType: 'text/plain',
         text: 'Path "/nonexistent" not found in the specification.',
         isError: true,
@@ -121,8 +130,8 @@ describe('PathItemHandler', () => {
     it('should handle spec loading errors', async () => {
       const error = new Error('Spec load failed');
       mockGetTransformedSpec.mockRejectedValue(error);
-      const variables: Variables = { path: encodedPathItems };
-      const uri = new URL(`openapi://paths/${encodedPathItems}`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}`);
       const expectedLogMessage = /Spec load failed/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -131,7 +140,7 @@ describe('PathItemHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}`,
         mimeType: 'text/plain',
         text: 'Spec load failed',
         isError: true,
@@ -141,8 +150,8 @@ describe('PathItemHandler', () => {
     it('should handle non-OpenAPI v3 spec', async () => {
       const invalidSpec = { swagger: '2.0', info: {} };
       mockGetTransformedSpec.mockResolvedValue(invalidSpec as unknown as OpenAPIV3.Document);
-      const variables: Variables = { path: encodedPathItems };
-      const uri = new URL(`openapi://paths/${encodedPathItems}`);
+      const variables: Variables = { specId: SPEC_ID, path: encodedPathItems };
+      const uri = new URL(`openapi://${SPEC_ID}/paths/${encodedPathItems}`);
       const expectedLogMessage = /Only OpenAPI v3 specifications are supported/;
 
       const result = await suppressExpectedConsoleError(expectedLogMessage, () =>
@@ -151,7 +160,7 @@ describe('PathItemHandler', () => {
 
       expect(result.contents).toHaveLength(1);
       expect(result.contents[0]).toEqual({
-        uri: `openapi://paths/${encodedPathItems}`,
+        uri: `openapi://${SPEC_ID}/paths/${encodedPathItems}`,
         mimeType: 'text/plain',
         text: 'Only OpenAPI v3 specifications are supported',
         isError: true,
